@@ -209,6 +209,7 @@
 
         <div class="meta">
           <div class="hint" id="hintArea">발음을 입력하고 Enter를 눌러주세요.</div>
+          <div class="stat">남은 문제: <span id="remaining">0</span></div>
           <div class="stats">
             <div class="stat-badge">정답 <span id="correct">0</span></div>
             <div class="stat-badge">전체 <span id="total">0</span></div>
@@ -265,6 +266,7 @@ const totalEl = document.getElementById('total');
 const correctEl = document.getElementById('correct');
 const accEl = document.getElementById('acc');
 const streakEl = document.getElementById('streak');
+const remainingEl = document.getElementById('remaining'); // 추가
 const sidePanel = document.getElementById('sidePanel');
 const tableEl = document.getElementById('table');
 const completeBanner = document.getElementById('completeBanner');
@@ -296,9 +298,7 @@ function renderTable() {
   tableEl.innerHTML = '';
   const endRow = Math.max(0, Math.min(ROWS.length - 1, parseInt(endRowSelect.value, 10) || ROWS.length - 1));
   let displayItems = [];
-  for (let i = 0; i <= endRow; i++) {
-    displayItems.push(...ROWS[i].items);
-  }
+  for (let i = 0; i <= endRow; i++) displayItems.push(...ROWS[i].items);
   if (includeNCheck.checked) displayItems.push(...N_CHAR.items);
 
   if (displayItems.length === 0) {
@@ -389,6 +389,7 @@ function updateStats() {
   correctEl.textContent = correct;
   accEl.textContent = total ? Math.round((correct/total)*100)+'%' : '0%';
   streakEl.textContent = streak;
+  remainingEl.textContent = order.length - idx; // 남은 문제
 }
 function checkAnswer() {
   if (!started) return;
@@ -402,23 +403,22 @@ function checkAnswer() {
       kanaEl.classList.remove('flash-correct');
       idx++;
       showQuestion();
+      updateStats();
     }, 200);
   } else {
     streak = 0;
     kanaEl.classList.add('flash-wrong');
     setTimeout(()=>kanaEl.classList.remove('flash-wrong'),300);
+    updateStats();
   }
-  updateStats();
 }
 
 // ===== 이벤트 =====
 startBtn.addEventListener('click', startQuiz);
 answerEl.addEventListener('keydown', e => { if (e.key === 'Enter') checkAnswer(); });
 revealBtn.addEventListener('click', () => { if(started) alert(pool[order[idx]].a.join(', ')); });
-skipBtn.addEventListener('click', () => { if(started){ idx++; showQuestion(); } });
+skipBtn.addEventListener('click', () => { if(started){ idx++; showQuestion(); updateStats(); } });
 
 </script>
 </body>
 </html>
-
-
