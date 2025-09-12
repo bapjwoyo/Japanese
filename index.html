@@ -58,12 +58,15 @@
     }
     .seg label{
       padding:8px 10px; cursor:pointer; color:#bcd0e5; font-weight:700; font-size:14px;
+      display:flex; align-items:center; gap:6px;
     }
     .seg input{ display:none; }
     .seg input:checked + span{
       background: linear-gradient(135deg, #6ea8fe, #53e0b8);
       color:#0b1220;
       font-weight:800;
+      border-radius:8px;
+      padding:6px 10px;
     }
     .btn{
       background: linear-gradient(135deg, #6ea8fe, #53e0b8);
@@ -145,12 +148,10 @@
 
     /* 표 토글 시 숨김 */
     .side.hidden{ display:none; }
-    /* ==== CSS 원본 그대로 ==== */
-    /* (생략 없이 붙여넣기 — 여기선 줄임) */
   </style>
 </head>
 <body>
-    <div class="app">
+  <div class="app">
     <div class="header">
       <div class="brand">
         <div class="logo" id="logoChar">あ</div>
@@ -190,7 +191,7 @@
     <div class="grid">
       <div class="card stage">
         <div class="prompt">
-          <div class="kana" id="kana">—</div>
+          <div class="kana" id="kana" role="status" aria-live="polite">—</div>
           <div class="complete-banner" id="completeBanner">
             <div class="complete-text">한 바퀴 완료! 잘했어요 🎉</div>
           </div>
@@ -199,7 +200,7 @@
 
         <div class="answer-wrap">
           <label class="input ring" style="flex:1">
-            <input id="answer" type="text" placeholder="발음(한글) 입력 예: 아, 카, 시, 치, 츠..." autocomplete="off" inputmode="text" />
+            <input id="answer" type="text" placeholder="발음(한글) 입력 예: 아, 카, 시, 치, 츠..." autocomplete="off" inputmode="text" autofocus />
           </label>
           <div class="actions">
             <button class="btn secondary" id="revealBtn" title="정답 보기"><span>정답 보기</span></button>
@@ -229,8 +230,6 @@
       </div>
     </div>
   </div>
-  <!-- ==== HTML 구조 원본 그대로 ==== -->
-  <!-- (생략 없이 붙여넣기 — 여기선 줄임) -->
 
 <script>
 // ===== 데이터 =====
@@ -266,19 +265,22 @@ const totalEl = document.getElementById('total');
 const correctEl = document.getElementById('correct');
 const accEl = document.getElementById('acc');
 const streakEl = document.getElementById('streak');
-const remainingEl = document.getElementById('remaining'); // 추가
+const remainingEl = document.getElementById('remaining');
 const sidePanel = document.getElementById('sidePanel');
 const tableEl = document.getElementById('table');
 const completeBanner = document.getElementById('completeBanner');
 const hiraganaMode = document.getElementById('hiraganaMode');
 const katakanaMode = document.getElementById('katakanaMode');
+const logoChar = document.getElementById('logoChar');
+const hintArea = document.getElementById('hintArea');
 
 // ===== 상태 =====
 let pool = [], order = [], idx = 0, started = false;
 let total = 0, correct = 0, streak = 0;
 
-// ===== 드롭다운 초기화 =====
+// ===== 드롭다운 초기화 (선택 보존) =====
 function populateEndRowSelect() {
+  const prev = endRowSelect.selectedIndex;
   endRowSelect.innerHTML = '';
   ROWS.forEach((row, index) => {
     const opt = document.createElement('option');
@@ -288,15 +290,21 @@ function populateEndRowSelect() {
     opt.textContent = label;
     endRowSelect.appendChild(opt);
   });
+  endRowSelect.selectedIndex = (prev >= 0 && prev < ROWS.length) ? prev : (ROWS.length - 1);
 }
-populateEndRowSelect();
-hiraganaMode.addEventListener('change', populateEndRowSelect);
-katakanaMode.addEventListener('change', populateEndRowSelect);
+
+function getSafeEndRow() {
+  const v = parseInt(endRowSelect.value, 10);
+  if (Number.isNaN(v)) return ROWS.length - 1;
+  return Math.max(0, Math.min(ROWS.length - 1, v));
+}
+
+function updateLogoChar(){ logoChar.textContent = hiraganaMode.checked ? 'あ' : 'ア'; }
 
 // ===== 학습 범위 표 렌더링 =====
 function renderTable() {
   tableEl.innerHTML = '';
-  const endRow = Math.max(0, Math.min(ROWS.length - 1, parseInt(endRowSelect.value, 10) || ROWS.length - 1));
+  const endRow = getSafeEndRow();
   let displayItems = [];
   for (let i = 0; i <= endRow; i++) displayItems.push(...ROWS[i].items);
   if (includeNCheck.checked) displayItems.push(...N_CHAR.items);
@@ -326,13 +334,17 @@ function renderTable() {
     tableEl.appendChild(cell);
   });
 }
-endRowSelect.addEventListener('change', renderTable);
-includeNCheck.addEventListener('change', renderTable);
-hiraganaMode.addEventListener('change', () => { populateEndRowSelect(); renderTable(); });
-katakanaMode.addEventListener('change', () => { populateEndRowSelect(); renderTable(); });
+
+endRowSelect.addEventListener('change', () => { renderTable(); savePrefs(); });
+includeNCheck.addEventListener('change', () => { renderTable(); savePrefs(); });
+
+hiraganaMode.addEventListener('change', () => { populateEndRowSelect(); renderTable(); updateLogoChar(); savePrefs(); });
+katakanaMode.addEventListener('change', () => { populateEndRowSelect(); renderTable(); updateLogoChar(); savePrefs(); });
+
 showTableCheck.addEventListener('change', () => {
   sidePanel.classList.toggle('hidden', !showTableCheck.checked);
   if (showTableCheck.checked) renderTable();
+  savePrefs();
 });
 
 // ===== 컨페티 =====
@@ -366,10 +378,16 @@ function showCompleteBanner() {
 
 // ===== 게임 로직 =====
 function startQuiz() {
-  const endRow = parseInt(endRowSelect.value, 10);
+  const endRow = getSafeEndRow();
   pool = [];
   for (let i=0; i<=endRow; i++) pool.push(...ROWS[i].items);
   if (includeNCheck.checked) pool.push(...N_CHAR.items);
+
+  if (pool.length === 0) {
+    hintArea.textContent = '학습 범위를 먼저 선택해주세요.';
+    return;
+  }
+
   if (katakanaMode.checked) pool = pool.map(item => ({k: toKatakana(item.k), a: item.a}));
   order = shuffle([...Array(pool.length).keys()]);
   idx = 0; started = true;
@@ -378,22 +396,30 @@ function startQuiz() {
   renderTable();
   showQuestion();
 }
+
 function showQuestion() {
   if (idx >= order.length) { showCompleteBanner(); idx = 0; order = shuffle(order); }
   kanaEl.textContent = pool[order[idx]].k;
   answerEl.value = '';
   answerEl.focus();
 }
+
 function updateStats() {
   totalEl.textContent = total;
   correctEl.textContent = correct;
-  accEl.textContent = total ? Math.round((correct/total)*100)+'%' : '0%';
+  accEl.textContent = total ? ((correct/total)*100).toFixed(1)+'%' : '0%';
   streakEl.textContent = streak;
-  remainingEl.textContent = order.length - idx; // 남은 문제
+  remainingEl.textContent = Math.max(0, order.length - idx);
 }
+
 function checkAnswer() {
   if (!started) return;
-  const ans = normalize(answerEl.value);
+  const raw = answerEl.value;
+  const ans = normalize(raw);
+  if (!ans) { // 빈 입력은 무시
+    hintArea.textContent = '발음을 입력한 뒤 Enter를 눌러주세요.';
+    return;
+  }
   const correctAnswers = pool[order[idx]].a.map(normalize);
   total++;
   if (correctAnswers.includes(ans)) {
@@ -408,17 +434,56 @@ function checkAnswer() {
   } else {
     streak = 0;
     kanaEl.classList.add('flash-wrong');
+    navigator.vibrate?.(60);
     setTimeout(()=>kanaEl.classList.remove('flash-wrong'),300);
     updateStats();
   }
 }
 
+// ===== 설정 저장 =====
+function savePrefs() {
+  try {
+    localStorage.setItem('kanaPrefs', JSON.stringify({
+      endRow: endRowSelect.selectedIndex,
+      includeN: includeNCheck.checked,
+      showTable: showTableCheck.checked,
+      mode: katakanaMode.checked ? 'katakana' : 'hiragana',
+    }));
+  } catch {}
+}
+function loadPrefs() {
+  try {
+    const s = localStorage.getItem('kanaPrefs');
+    if (!s) return;
+    const p = JSON.parse(s);
+    (p.mode === 'katakana' ? katakanaMode : hiraganaMode).checked = true;
+    populateEndRowSelect();
+    endRowSelect.selectedIndex = (p.endRow ?? endRowSelect.selectedIndex);
+    includeNCheck.checked = !!p.includeN;
+    showTableCheck.checked = !!p.showTable;
+    sidePanel.classList.toggle('hidden', !showTableCheck.checked);
+  } catch {}
+}
+
 // ===== 이벤트 =====
 startBtn.addEventListener('click', startQuiz);
 answerEl.addEventListener('keydown', e => { if (e.key === 'Enter') checkAnswer(); });
-revealBtn.addEventListener('click', () => { if(started) alert(pool[order[idx]].a.join(', ')); });
+revealBtn.addEventListener('click', () => { if(started) hintArea.textContent = `정답: ${pool[order[idx]].a.join(', ')}`; });
 skipBtn.addEventListener('click', () => { if(started){ idx++; showQuestion(); updateStats(); } });
 
+// 단축키: R=정답, S=패스
+document.addEventListener('keydown', (e) => {
+  if (!started) return;
+  const k = e.key.toLowerCase();
+  if (k === 'r') revealBtn.click();
+  if (k === 's') skipBtn.click();
+});
+
+// ===== 초기화 =====
+populateEndRowSelect();
+loadPrefs();
+updateLogoChar();
+renderTable();
 </script>
 </body>
 </html>
